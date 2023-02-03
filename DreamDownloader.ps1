@@ -1,6 +1,5 @@
 $replacements = @(
 	@{Name1="nidoran-f";Name2="nidoran"},
-	@{Name1="nidoran-m";Name2="nidoran"},
 	@{Name1="farfetchd";Name2="farfetch'd"},
 	@{Name1="mr-mime";Name2="mr. mime"},
 	@{Name1="deoxys-normal";Name2="deoxys"},
