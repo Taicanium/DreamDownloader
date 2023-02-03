@@ -42,12 +42,10 @@ function SearchForFilesBySpecies
 	Write-Host 'Discovered' $resultCount 'files matching' $Species'. Saving...'
 
 	foreach ($stringResult in $results[3]) {
-		if ($stringResult.Contains("archives.bulbagarden.net")) {
-			$pageReq = Invoke-Webrequest -URI $stringResult
-			$classResult = $pageReq.ParsedHtml.getElementsByClassName($searchClass)[0]
-			$finalName = $stringResult -replace ".*:"
-			$fileReq = Invoke-Webrequest -URI $classResult.firstChild.firstChild.href -OutFile $finalName
-		}
+		$pageReq = Invoke-Webrequest -URI $stringResult
+		$classResult = $pageReq.ParsedHtml.getElementsByClassName($searchClass)[0]
+		$finalName = $stringResult -replace ".*:"
+		$fileReq = Invoke-Webrequest -URI $classResult.firstChild.firstChild.href -OutFile $finalName
 	}
 }
 
