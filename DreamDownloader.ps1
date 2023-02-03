@@ -15,12 +15,12 @@ function SearchForFilesBySpecies
 		[string]$Species
 	)
 	
-	$requestedIndex = -1
+	$requestedIndex = "-1"
 	
 	try {
 		$indexReq = Invoke-WebRequest -URI $pokemonSearchURI$Species
 		$indexJson = $indexReq.Content | ConvertFrom-Json
-		$requestedIndex = $indexJson.id
+		$requestedIndex = $indexJson.id.ToString()
 		while ($requestedIndex.Length -lt 3) {
 			$requestedIndex = '0'+$requestedIndex
 		}
@@ -50,6 +50,14 @@ function SearchForFilesBySpecies
 }
 
 if ($requestedSpecies.Equals('all')) {
+	$restart = Read-Host -Prompt 'Start from a specific species in the list? (y/n)'
+	$specResume = ' '
+	$beginScanning = $true
+	if ($restart -eq 'y') {
+		$beginScanning = $false
+		$specResume = Read-Host -Prompt 'Species to begin from'
+		$specResume = $specResume.ToLower()
+	}
 	$indexReq = Invoke-WebRequest -URI $allURI
 	$result = $indexReq.Content | ConvertFrom-Json
 	$results = $result.results
@@ -57,7 +65,12 @@ if ($requestedSpecies.Equals('all')) {
 		try {
 			$indexReq = Invoke-WebRequest -URI $resource.url
 			$indexJson = $indexReq.Content | ConvertFrom-Json
-			SearchForFilesBySpecies -Species $indexJson.name
+			if ($indexJson.name -eq $specResume) {
+				$beginScanning = $true
+			}
+			if ($beginScanning) {
+				SearchForFilesBySpecies -Species $indexJson.name
+			}
 		}
 		catch [System.Net.WebException] { }
 	}
