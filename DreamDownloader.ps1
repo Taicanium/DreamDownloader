@@ -1,4 +1,12 @@
+<# There are certain names on the PokeAPI website that include
+identifiers (-normal, -male, etc) that Bulbagarden doesn't use.
+So, we create a List of changes to make to those names, so that
+Bulbagarden CAN read them. This List is thirty-or-so names long
+but that's still a lot easier than listing all 1,000 Pokemon in
+the file directly. #>
+
 $replacements = @(
+
 	@{Name1="nidoran-f";Name2="nidoran"},
 	@{Name1="farfetchd";Name2="farfetch'd"},
 	@{Name1="mr-mime";Name2="mr. mime"},
@@ -30,106 +38,150 @@ $replacements = @(
 	@{Name1="urshifu-single-strike";Name2="urshifu"},
 	@{Name1="basculegion-male";Name2="basculegion"},
 	@{Name1="enamorus-incarnate";Name2="enamorus"}
+	
 )
 
-$pokemonCount = 1007
-$pokemonSearchURI = "pokeapi.co/api/v2/pokemon/"
-$allURI = "https://pokeapi.co/api/v2/pokemon?limit=100000&offset=0"
+$pokemonCount = 1007 <# This number doesn't include Paradox Pokemon, because they have a skill issue. #>
 
-$searchClass = "fullMedia"
-$mainURI = "https://archives.bulbagarden.net/w/api.php"
-$subURI = "?action=opensearch&limit=500&search=File:"
-$requestedSpecies = Read-Host -Prompt 'Species name (or "all")'
-$requestedSpecies = $requestedSpecies.ToLower()
+$pokemonSearchURI = "pokeapi.co/api/v2/pokemon/" <# We start with this base web address, and we will later stick Pokemon names on the end of it to get the Pokedex entry numbers. #>
 
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$allURI = "https://pokeapi.co/api/v2/pokemon?limit=100000&offset=0" <# We'll call this web address if and only if the user wants to download all Pokemon at once. This will get us all the names, rather than going one-by-one via index. #>
+
+$searchClass = "fullMedia" <# In Bulbagarden's backend HTML, this is the identifier for the actual image file that it shows on a search results page. #>
+
+$mainURI = "https://archives.bulbagarden.net/w/api.php" <# We'll call the Bulbagarden API to initiate a raw search... #>
+
+$subURI = "?action=opensearch&limit=500&search=File:" <# ...and we'll use these parameters to narrow things down by Pokemon name and index. #>
+
+$requestedSpecies = Read-Host -Prompt 'Species name (or "all")' <# Read-Host is the Console.Readline of PowerShell. #>
+
+$requestedSpecies = $requestedSpecies.ToLower() <# PokeAPI requires that we search by names all in lowercase. #>
+
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 <# PowerShell requires a specific security protocol (TLS12) before conducting user-level web requests. There's no need to know the underlying technology. #>
 
 function SearchForFilesBySpecies
 {
 	param(
-		[string]$Species
+	
+		[string]$Species <# This function takes one parameter: The name of the species the user (or script) wants to download. #>
 	)
 	
-	$requestedIndex = "-1"
+	$requestedIndex = "-1" <# Start by initializing the index to -1. If it STAYS -1, we'll know that something went wrong. #>
 	
 	try {
-		$indexReq = Invoke-WebRequest -URI $pokemonSearchURI$Species
-		$indexJson = $indexReq.Content | ConvertFrom-Json
-		$requestedIndex = $indexJson.id.ToString()
-		while ($requestedIndex.Length -lt 3) {
-			$requestedIndex = '0'+$requestedIndex
+
+		$indexReq = Invoke-WebRequest -URI $pokemonSearchURI$Species <# Actually perform the web request to PokeAPI. #>
+
+		$indexJson = $indexReq.Content | ConvertFrom-Json <# Assuming it succeeds, the result will be in JSON; here, we convert it to a PowerShell table for easier lookup. #>
+
+		$requestedIndex = $indexJson.id.ToString() <# Grab the Pokedex entry number, and convert it to a string. #>
+
+		while ($requestedIndex.Length -lt 3) { <# If the index is less than 100... #>
+
+			$requestedIndex = '0'+$requestedIndex <# Pad it with leading 0s to comply with Bulbagarden's filename format. #>
 		}
 	}
-	catch [System.Net.WebException] {
-		Write-Host 'Unrecognized species. Script will attempt to search regardless.'
-		$requestedIndex = Read-Host -Prompt 'Species index'
+
+	catch [System.Net.WebException] { <# If PokeAPI returns an error, that means it didn't recognize the species name. #>
+
+		Write-Host 'Unrecognized species. Script will attempt to search regardless.' <# However, let's account for that just in case the user is searching for a Gen 10 'mon or later. #>
+
+		$requestedIndex = Read-Host -Prompt 'Species index' <# Ask the user to specify the index manually. #>
 	}
 
-	$replaced = $false
+	$replaced = $false <# Start by assuming that the species name DOESN'T fall into the table at the start of this file. #>
 	foreach ($replacement in $replacements) {
 		if ($Species.Equals($replacement.Name1)) {
-			$Species = $replacement.Name2
+
+			$Species = $replacement.Name2 <# If it does, however, then actually do the replacement. Exchange "mr-mime" for "mr. mime", etc. #>
 			$replaced = $true
 		}
 	}
 
-	$req = Invoke-Webrequest -URI $mainURI$subURI$requestedIndex$Species
-	$results = $req.Content | ConvertFrom-Json
+	$req = Invoke-Webrequest -URI $mainURI$subURI$requestedIndex$Species <# Now that we have our species name and our Pokedex number, make the search request to Bulbagarden... #>
 
-	$resultCount = 0
+	$results = $req.Content | ConvertFrom-Json <# ...and convert it to a table. #>
 
-	foreach ($stringResult in $results[3]) {
-		$resultCount = $resultCount+1
+	$resultCount = 0 <# Start by assuming no search results. #>
+
+	foreach ($stringResult in $results[3]) { <# An individual search result comes in the form of three Lists. $results[1] is the filenames. $results[2] is a set of control strings. $results[3] is the filenames AND their attached web addresses, and that's the one we want. #>
+
+		$resultCount = $resultCount+1 <# Count the actual search results. #>
 	}
 
-	Write-Host 'Discovered' $resultCount 'files matching' $Species'. Saving...'
+	Write-Host 'Discovered' $resultCount 'files matching' $Species'. Saving...' <# Let the user know how many search results we found. #>
 
-	foreach ($stringResult in $results[3]) {
-		$pageReq = Invoke-Webrequest -URI $stringResult
-		$classResult = $pageReq.ParsedHtml.getElementsByClassName($searchClass)[0]
-		$finalName = $stringResult -replace ".*:"
-		$fileReq = Invoke-Webrequest -URI $classResult.firstChild.firstChild.href -OutFile $finalName
+	foreach ($stringResult in $results[3]) { <# Go through our search results... #>
+
+		$pageReq = Invoke-Webrequest -URI $stringResult <# ...and grab the HTML from the web pages for each and every file. #>
+
+		$classResult = $pageReq.ParsedHtml.getElementsByClassName($searchClass)[0] <# Remember that $searchClass is the HTML tag that we want to find, because it lists the actual web address for the raw PNG/JPG file. #>
+
+		$finalName = $stringResult -replace ".*:" <# Take off everything in the file ID before the File: identifier, leaving just its name. #>
+
+		$fileReq = Invoke-Webrequest -URI $classResult.firstChild.firstChild.href -OutFile $finalName <# Finally, now that we have the file name and address, call the web request directly to the file, and save it locally. #>
 	}
 }
 
-if ($requestedSpecies.Equals('all')) {
-	$restart = Read-Host -Prompt 'Start from a specific species in the list? (y/n)'
-	$specResume = ' '
+if ($requestedSpecies.Equals('all')) { <# Ask the user if they want to download all species images indiscriminately. #>
+
+	$restart = Read-Host -Prompt 'Start from a specific species in the list? (y/n)' <# In case the script was previously ended prematurely, ask the user if they'd like to start from where they left off. #>
+
+	$specResume = ' ' <# Start by assuming the user doesn't want to do that. #>
 	$beginScanning = $true
-	if ($restart -eq 'y') {
+
+	if ($restart -eq 'y') { <# If they do... #>
 		$beginScanning = $false
-		$specResume = Read-Host -Prompt 'Species to begin from'
+
+		$specResume = Read-Host -Prompt 'Species to begin from' <# ...ask them where exactly their starting point will be. #>
 		$specResume = $specResume.ToLower()
 	}
-	$doReplaces = Read-Host -Prompt "Scan for regex replacement names? If you don't know what this means, you don't need it. (y/n)"
+
+	$doReplaces = Read-Host -Prompt "Scan for regex replacement names? If you don't know what this means, you don't need it. (y/n)" <# This WAS something I inserted so that Miles (my beta tester) would be able to download specifically only the species in the replacement List at the start of the file. I could've removed it afterwards, but I felt like there might still be niche instances where it's useful. #>
 	if ($doReplaces -eq 'y') {
 		foreach ($replacement in $replacements) {
-			SearchForFilesBySpecies -Species $replacement.Name1
+
+			SearchForFilesBySpecies -Species $replacement.Name1 <# If, for some reason, the user does want to do just that, then do it: Conduct the search for all species in the List. #>
 		}
 	}
-	$indexReq = Invoke-WebRequest -URI $allURI
-	$result = $indexReq.Content | ConvertFrom-Json
-	$results = $result.results
+
+	$indexReq = Invoke-WebRequest -URI $allURI <# Whether or not the regex names were downloaded, we now begin our search proper. Begin by downloading all Pokemon names from PokeAPI. The specific function we're calling will give us not just the names, but further search URLs that we can plug right back into PokeAPI to get the indexes. #>
+
+	$result = $indexReq.Content | ConvertFrom-Json <# Convert the names to a table. #>
+
+	$results = $result.results <# Give the result a non-redundant name. #>
 	$countedPokemon = 0
-	foreach ($resource in $results) {
+
+	foreach ($resource in $results) { <# For every result in the List... #>
 		try {
-			$indexReq = Invoke-WebRequest -URI $resource.url
-			$indexJson = $indexReq.Content | ConvertFrom-Json
-			if ($indexJson.name -eq $specResume) {
-				$beginScanning = $true
+
+			$indexReq = Invoke-WebRequest -URI $resource.url <# ...call the associated search URL... #>
+
+			$indexJson = $indexReq.Content | ConvertFrom-Json <# ...and as always, convert it to a table. #>
+
+			if ($indexJson.name -eq $specResume) { <# Check if the user specified a starting point earlier. #>
+
+				$beginScanning = $true <# If they did, and this species matches that starting point, then let the script know to start downloading. #>
 			}
-			if ($beginScanning) {
-				SearchForFilesBySpecies -Species $indexJson.name
+
+			if ($beginScanning) { <# If and only if we've been given that prior go-ahead or we're downloading everything... #>
+
+				SearchForFilesBySpecies -Species $indexJson.name <# ...call our custom download function. #>
 			}
-			$countedPokemon = $countedPokemon+1
-			if ($countedPokemon -gt $pokemonCount) {
-				return
+
+			$countedPokemon = $countedPokemon+1 <# Increase the counter of species we've downloaded. #>
+
+			if ($countedPokemon -gt $pokemonCount) { <# If the counter has reached the Paradox Pokemon... #>
+
+				return <# ...halt the search, because we don't want them. #>
 			}
 		}
-		catch [System.Net.WebException] { }
+
+		catch [System.Net.WebException] { } <# If an error occurs, do not halt the script. Discard the species we tried to download, and otherwise continue the search as normal. #>
 	}
 } else {
-	SearchForFilesBySpecies -Species $requestedSpecies
+
+	SearchForFilesBySpecies -Species $requestedSpecies <# If the user did specify an exact species they wanted to download, forego the search functions and download that species directly. #>
 }
 
-Write-Host 'Process completed.'
+Write-Host 'Process completed.' <# End the process by letting the user know that everything went well. #>
