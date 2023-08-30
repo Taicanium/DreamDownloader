@@ -38,7 +38,7 @@ $replacements = @(
 	@{Name1="urshifu-single-strike";Name2="urshifu"},
 	@{Name1="basculegion-male";Name2="basculegion"},
 	@{Name1="enamorus-incarnate";Name2="enamorus"}
-	
+
 )
 
 $pokemonCount = 1007 <# This number doesn't include Paradox Pokemon, because they have a skill issue. #>
@@ -49,47 +49,47 @@ $allURI = "https://pokeapi.co/api/v2/pokemon?limit=100000&offset=0" <# We'll cal
 
 $searchClass = "fullMedia" <# In Bulbagarden's backend HTML, this is the identifier for the actual image file that it shows on a search results page. #>
 
-$mainURI = "https://archives.bulbagarden.net/w/api.php" <# We'll call the Bulbagarden API to initiate a raw search... #>
+$mainURI = "https://archives.bulbagarden.net/w/index.php" <# We'll call the Bulbagarden API to initiate a raw search... #>
 
-$subURI = "?action=opensearch&limit=500&search=File:" <# ...and we'll use these parameters to narrow things down by Pokemon name and index. #>
+$subURI = "?title=Special:Search&limit=500&offset=0&profile=images&search=" <# ...and we'll use these parameters while narrowing things down by Pokemon name and index. #>
 
 $requestedSpecies = Read-Host -Prompt 'Species name (or "all")' <# Read-Host is the Console.Readline of PowerShell. #>
 
 $requestedSpecies = $requestedSpecies.ToLower() <# PokeAPI requires that we search by names all in lowercase. #>
 
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 <# PowerShell requires a specific security protocol (TLS12) before conducting user-level web requests. There's no need to know the underlying technology. #>
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 <# PowerShell requires that we set a specific security protocol (TLS12) before conducting user-level web requests. There's no need to know the underlying technology. #>
 
 function SearchForFilesBySpecies
 {
 	param(
-	
+
 		[string]$Species <# This function takes one parameter: The name of the species the user (or script) wants to download. #>
 	)
-	
+
 	$requestedIndex = "-1" <# Start by initializing the index to -1. If it STAYS -1, we'll know that something went wrong. #>
-	
+
 	try {
 
 		$indexReq = Invoke-WebRequest -URI $pokemonSearchURI$Species <# Actually perform the web request to PokeAPI. #>
 
-		$indexJson = $indexReq.Content | ConvertFrom-Json <# Assuming it succeeds, the result will be in JSON; here, we convert it to a PowerShell table for easier lookup. #>
+		$indexJson = $indexReq.Content | ConvertFrom-Json <# Assuming it succeeds, the result will be in JSON format; here, we convert it to a PowerShell table for easier lookup. #>
 
 		$requestedIndex = $indexJson.id.ToString() <# Grab the Pokedex entry number, and convert it to a string. #>
 
 		while ($requestedIndex.Length -lt 3) { <# If the index is less than 100... #>
 
-			$requestedIndex = '0'+$requestedIndex <# Pad it with leading 0s to comply with Bulbagarden's filename format. #>
+			$requestedIndex = '0'+$requestedIndex <# ...pad it with leading 0s to comply with Bulbagarden's filename format. #>
 		}
 	}
 
 	catch [System.Net.WebException] { <# If PokeAPI returns an error, that means it didn't recognize the species name. #>
 
-		Write-Host 'Unrecognized species. Script will attempt to search regardless.' <# However, let's account for that just in case the user is searching for a Gen 10 'mon or later. #>
+		Write-Host 'Unrecognized species. Script will attempt to search regardless.' <# However, let's account for that just in case the user is searching for a newly added 'mon that PokeAPI hasn't added yet. #>
 
 		$requestedIndex = Read-Host -Prompt 'Species index' <# Ask the user to specify the index manually. #>
 	}
 
-	$replaced = $false <# Start by assuming that the species name DOESN'T fall into the table at the start of this file. #>
+	$replaced = $false <# Start by assuming that the species name DOESN'T fall into the replacement table at the start of this file. #>
 	foreach ($replacement in $replacements) {
 		if ($Species.Equals($replacement.Name1)) {
 
@@ -98,28 +98,22 @@ function SearchForFilesBySpecies
 		}
 	}
 
-	$req = Invoke-Webrequest -URI $mainURI$subURI$requestedIndex$Species <# Now that we have our species name and our Pokedex number, make the search request to Bulbagarden... #>
+	$req = Invoke-Webrequest -URI $mainURI$subURI$requestedIndex$Species <# Now that we have our species name and our Pokedex number, make the search request to Bulbagarden. #>
 
-	$results = $req.Content | ConvertFrom-Json <# ...and convert it to a table. #>
+	$images = $req.Images.src <# Give ourselves a short name for the web addresses to each file result. PowerShell makes this easy: In a lower-level language like C++, we'd have to iterate through each item in the List and take out the 'src' elements one at a time. But by requesting the 'src' element on the List itself, as if the List was a single object, PowerShell allows us to grab the 'src' element from all items in the List on a single line. #>
 
-	$resultCount = 0 <# Start by assuming no search results. #>
+	Write-Host 'Discovered' ($images.Count - 1) 'files matching' $Species'. Saving...' <# Let the user know how many search results we found. We subtract 1 from this count because it includes a MediaWiki logo present on the search results page. #>
 
-	foreach ($stringResult in $results[3]) { <# An individual search result comes in the form of three Lists. $results[1] is the filenames. $results[2] is a set of control strings. $results[3] is the filenames AND their attached web addresses, and that's the one we want. #>
+	foreach ($stringResult in $images) { <# Go through our search results. #>
 
-		$resultCount = $resultCount+1 <# Count the actual search results. #>
-	}
+		if (-not($stringResult.Contains("mediawiki")) -and -not($stringResult.Contains("jpg/"))) { <# We want to first make sure this isn't the MediaWiki logo previously mentioned. We also limit ourselves to PNG files, because JPG files on the archives are generally photos of merchandise; we only want artwork. #>
 
-	Write-Host 'Discovered' $resultCount 'files matching' $Species'. Saving...' <# Let the user know how many search results we found. #>
+			$finalUri = $stringResult -replace "/thumb","" <# The results link us to thumbnail images scaled down to 120px. We can get the full-sized image URL by manipulating it. First we remove the thumbnail indicator... #> -replace "png/.*","png" <# ...and then we remove the suffix that normally dictates the size of the thumbnail. #>
 
-	foreach ($stringResult in $results[3]) { <# Go through our search results... #>
+			$finalName = $finalUri -replace ".*/" <# Grab the file's actual name by removing the rest of the web address. #>
 
-		$pageReq = Invoke-Webrequest -URI $stringResult <# ...and grab the HTML from the web pages for each and every file. #>
-
-		$classResult = $pageReq.ParsedHtml.getElementsByClassName($searchClass)[0] <# Remember that $searchClass is the HTML tag that we want to find, because it lists the actual web address for the raw PNG/JPG file. #>
-
-		$finalName = $stringResult -replace ".*:" <# Take off everything in the file ID before the File: identifier, leaving just its name. #>
-
-		$fileReq = Invoke-Webrequest -URI $classResult.firstChild.firstChild.href -OutFile $finalName <# Finally, now that we have the file name and address, call the web request directly to the file, and save it locally. #>
+			$fileReq = Invoke-Webrequest $finalUri -OutFile $finalName <# Finally, now that we have the file name and address, call a web request directly to the file, and save it locally. #>
+		}
 	}
 }
 
