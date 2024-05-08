@@ -10,7 +10,7 @@ $replacements = @(
 	@{Name1="mr-rime";Name2="mr. rime"}
 )
 
-$pokemonCount = 1007 <# This number doesn't include Paradox Pokemon, because they have a skill issue. #>
+$pokemonCount = 1024
 
 $pokemonSearchURI = "pokeapi.co/api/v2/pokemon/" <# We start with this base web address, and we will later stick Pokemon names on the end of it to get the Pokedex entry numbers. #>
 
@@ -34,6 +34,8 @@ function SearchForFilesBySpecies
 	)
 
 	$requestedIndex = "-1" <# Start by initializing the index to -1. If it STAYS -1, we'll know that something went wrong. #>
+	
+	$global:ProgressPreference = 'SilentlyContinue'
 
 	try {
 
@@ -65,7 +67,9 @@ function SearchForFilesBySpecies
 		}
 	}
 
-	$Species = $Species -replace "-.*",""
+	if ([int]$requestedIndex -lt 984) { <# The Paradox Pokemon start at 984. Their names all include dashes. #>
+		$Species = $Species -replace "-.*",""
+	}
 
 	$req = Invoke-Webrequest -URI $mainURI$subURI$requestedIndex$Species <# Now that we have our species name and our Pokedex number, make the search request to Bulbagarden. #>
 
@@ -81,7 +85,13 @@ function SearchForFilesBySpecies
 
 			$finalName = $finalUri -replace ".*/" <# Grab the file's actual name by removing the rest of the web address. #>
 
-			$fileReq = Invoke-Webrequest $finalUri -OutFile $finalName <# Finally, now that we have the file name and address, call a web request directly to the file, and save it locally. #>
+			try {
+				
+				$fileReq = Invoke-Webrequest $finalUri -OutFile $finalName <# Finally, now that we have the file name and address, call a web request directly to the file, and save it locally. #>
+			}
+			catch {
+				<# Sometimes an empty filename can appear in our results. We'll throw an error if we don't tell it to discard the file. #>
+			}
 			
 			<# This is also why we used the frontend API (/w/index.php) rather than the developer API (/w/api.php):
 			The developer search function links us to the file namespace pages on Bulbagarden Archives, but not the
@@ -91,6 +101,8 @@ function SearchForFilesBySpecies
 			that translates to a huge amount of web traffic and thereby time saved. #>
 		}
 	}
+	
+	$global:ProgressPreference = 'Continue'
 }
 
 if ($requestedSpecies.Equals('all')) { <# Ask the user if they want to download all species images indiscriminately. #>
@@ -121,6 +133,8 @@ if ($requestedSpecies.Equals('all')) { <# Ask the user if they want to download 
 
 	$results = $result.results <# Give the result a non-redundant name. #>
 	$countedPokemon = 0
+	
+	$global:ProgressPreference = 'SilentlyContinue'
 
 	foreach ($resource in $results) { <# For every result in the List... #>
 		try {
@@ -132,23 +146,30 @@ if ($requestedSpecies.Equals('all')) { <# Ask the user if they want to download 
 			if ($indexJson.name -eq $specResume) { <# Check if the user specified a starting point earlier. #>
 
 				$beginScanning = $true <# If they did, and this species matches that starting point, then let the script know to start downloading. #>
+				
+				Write-Host "`n"
 			}
 
 			if ($beginScanning) { <# If and only if we've been given that prior go-ahead or we're downloading everything... #>
 
 				SearchForFilesBySpecies -Species $indexJson.name <# ...call our custom download function. #>
+			} else {
+				
+				Write-Host -NoNewLine "`r"$countedPokemon" Pokemon skipped" <# Otherwise, let the user know where we are in the list. #>
 			}
 
 			$countedPokemon = $countedPokemon+1 <# Increase the counter of species we've downloaded. #>
 
-			if ($countedPokemon -gt $pokemonCount) { <# If the counter has reached the Paradox Pokemon... #>
+			if ($countedPokemon -gt $pokemonCount) { <# If the counter has reached the end of the Paradox Pokemon... #>
 
-				return <# ...halt the search, because we don't want them. #>
+				return <# ...halt the search, because the only remaining matches are alternate forms. #>
 			}
 		}
 
 		catch [System.Net.WebException] { } <# If an error occurs, do not exit the script. Discard the species we tried to download, and otherwise continue the search as normal. #>
 	}
+	
+	$global:ProgressPreference = 'Continue'
 } else {
 
 	SearchForFilesBySpecies -Species $requestedSpecies <# If the user did specify an exact species they wanted to download, forego the search functions and download that species directly. #>
