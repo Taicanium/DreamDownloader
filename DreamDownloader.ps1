@@ -20,10 +20,6 @@ $mainURI = "https://archives.bulbagarden.net/w/index.php" <# We'll call the Bulb
 
 $subURI = "?title=Special:Search&limit=500&offset=0&profile=images&search=" <# ...and we'll use these parameters while narrowing things down by Pokemon name and index. #>
 
-$requestedSpecies = Read-Host -Prompt 'Species name (or "all")' <# Read-Host is the Console.Readline of PowerShell. #>
-
-$requestedSpecies = $requestedSpecies.ToLower() <# PokeAPI requires that we search by names all in lowercase. #>
-
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 <# PowerShell requires that we set a specific security protocol (TLS12) before conducting user-level web requests. There's no need to know the underlying technology. #>
 
 function SearchForFilesBySpecies
@@ -32,10 +28,12 @@ function SearchForFilesBySpecies
 
 		[string]$Species <# This function takes one parameter: The name of the species the user (or script) wants to download. #>
 	)
+	
+	$foundFiles = New-Object System.Collections.Generic.List[System.Object] <# If we're downloading concept art, we'll need to keep track of which files we've already downloaded. Why will become apparent later. #>
 
 	$requestedIndex = "-1" <# Start by initializing the index to -1. If it STAYS -1, we'll know that something went wrong. #>
 	
-	$global:ProgressPreference = 'SilentlyContinue'
+	$global:ProgressPreference = 'SilentlyContinue' <# Disable progress reporting for web downloads; Powershell's console progress bars are inefficient and would vastly slow down this script. #>
 
 	try {
 
@@ -80,6 +78,8 @@ function SearchForFilesBySpecies
 	foreach ($stringResult in $images) { <# Go through our search results. #>
 
 		if (-not($stringResult.Contains("mediawiki")) -and -not($stringResult.Contains("jpg/"))) { <# We want to first make sure this isn't the MediaWiki logo previously mentioned. We also limit ourselves to PNG files, because JPG files on the archives are generally photos of merchandise; we only want artwork. #>
+				
+			$foundFiles.Add($stringResult) <# Record the file name. #>
 
 			$finalUri = $stringResult -replace "/thumb","" <# The results link us to thumbnail images scaled down to 120px. We can get the full-sized image URL by manipulating it. First we remove the thumbnail indicator... #> -replace "png/.*","png" <# ...and then we remove the suffix that normally dictates the size of the thumbnail. #>
 
@@ -90,7 +90,7 @@ function SearchForFilesBySpecies
 				$fileReq = Invoke-Webrequest $finalUri -OutFile $finalName <# Finally, now that we have the file name and address, call a web request directly to the file, and save it locally. #>
 			}
 			catch {
-				<# Sometimes an empty filename can appear in our results. We'll throw an error if we don't tell it to discard the file. #>
+				<# Sometimes an empty filename can appear in our results, which would otherwise cause an error if we didn't catch it here. #>
 			}
 			
 			<# This is also why we used the frontend API (/w/index.php) rather than the developer API (/w/api.php):
@@ -102,10 +102,37 @@ function SearchForFilesBySpecies
 		}
 	}
 	
-	$global:ProgressPreference = 'Continue'
+	$conceptReq = Invoke-Webrequest -URI $mainURI$subURI$Species <# As an additional feature, we will now search for concept art files in the related category on Bulbagarden. These are formatted without the Pokedex number. #>
+	
+	$conceptImgs = $conceptReq.Images.src
+	
+	Write-Host 'Discovered' ($conceptImgs.Count - 1) 'supplementary files matching' $Species'. Trimming and saving...' <# This number is sure to be several times the previous one, but only a handful are actually worth saving; most are anime or merchandise screenshots, which we don't (currently) want. #>
+	
+	foreach ($stringResult in $conceptImgs) {
+		
+		$strResLower = $stringResult.ToLower() <# Make it lowercase to ease the scanning function in the next line. #>
+		
+		if (-not($strResLower.Contains("mediawiki")) -and -not($foundFiles -contains $stringResult) -and ($strResLower.Contains("concept") -or $strResLower.Contains("sugimori") -or $strResLower.Contains("beta") -or $strResLower.Contains("shell"))) { <# As far as I can determine, all concept files contain at least one of these four words - official concept art; Ken Sugimori's concept art posted to Tumblr; beta design concept art; and detailed concepts of the shells of Alolan legendaries, respectively. #>
+			
+			$finalUri = $stringResult -replace "/thumb","" -replace "png/.*","png" -replace "jpg/.*","jpg" <# Some of these files are in JPG format, so we have to allow for them here. #>
+			$finalName = $finalUri -replace ".*/"
+			
+			try {
+				$fileReq = Invoke-Webrequest $finalUri -OutFile $finalName
+			}
+			catch {	
+			}
+		}
+	}
+	
+	$global:ProgressPreference = 'Continue' <# Reset the progress preference from earlier to its default value. #>
 }
 
-if ($requestedSpecies.Equals('all')) { <# Ask the user if they want to download all species images indiscriminately. #>
+$requestedSpecies = Read-Host -Prompt 'Species name (or "all")' <# Ask the user if they want to download all species images indiscriminately. #>
+
+$requestedSpecies = $requestedSpecies.ToLower() <# PokeAPI requires that we search by names all in lowercase. #>
+
+if ($requestedSpecies.Equals('all')) {
 
 	$restart = Read-Host -Prompt 'Start from a specific species in the list? (y/n)' <# In case the script was previously ended prematurely, ask the user if they'd like to start from where they left off. #>
 
