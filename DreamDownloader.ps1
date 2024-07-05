@@ -72,8 +72,10 @@ function SearchForFilesBySpecies
 	$req = Invoke-Webrequest -URI $mainURI$subURI$requestedIndex$Species <# Now that we have our species name and our Pokedex number, make the search request to Bulbagarden. #>
 
 	$images = $req.Images.src <# Give ourselves a short name for the web addresses to each file result. PowerShell makes this easy: In a lower-level language like C++, we'd have to iterate through each item in the List and take out the 'src' elements one at a time. #>
+	
+	New-Item -ItemType Directory -Force -Path .\$Species | Out-Null <# Since a single species search can easily return hundreds of files, we'll create subdirectories for each species. If the subdirectory already exists, the -Force option suppresses a resulting error message. Piping the command into Out-Null suppresses output with info about the newly created directory; the Batch equivalent would be @echo off. #>
 
-	Write-Host 'Discovered' ($images.Count - 1) 'files matching' $Species'. Saving...' <# Let the user know how many search results we found. We subtract 1 from this count because it includes a MediaWiki logo present on the search results page. #>
+	Write-Host 'Discovered' ($images.Count - 1) 'files matching' $Species'. Trimming and saving...' <# Let the user know how many search results we found. We subtract 1 from this count because it includes a MediaWiki logo present on the search results page. #>
 
 	foreach ($stringResult in $images) { <# Go through our search results. #>
 
@@ -87,7 +89,7 @@ function SearchForFilesBySpecies
 
 			try {
 				
-				$fileReq = Invoke-Webrequest $finalUri -OutFile $finalName <# Finally, now that we have the file name and address, call a web request directly to the file, and save it locally. #>
+				$fileReq = Invoke-Webrequest $finalUri -OutFile .\$Species\$finalName <# Finally, now that we have the file name and address, call a web request directly to the file, and save it locally. #>
 			}
 			catch {
 				<# Sometimes an empty filename can appear in our results, which would otherwise cause an error if we didn't catch it here. #>
@@ -118,7 +120,7 @@ function SearchForFilesBySpecies
 			$finalName = $finalUri -replace ".*/"
 			
 			try {
-				$fileReq = Invoke-Webrequest $finalUri -OutFile $finalName
+				$fileReq = Invoke-Webrequest $finalUri -OutFile .\$Species\$finalName
 			}
 			catch {	
 			}
