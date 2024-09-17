@@ -83,7 +83,7 @@ function SearchForFilesBySpecies
 				
 			$foundFiles.Add($stringResult) <# Record the file name. #>
 
-			$finalUri = $stringResult -replace "/thumb","" <# The results link us to thumbnail images scaled down to 120px. We can get the full-sized image URL by manipulating it. First we remove the thumbnail indicator... #> -replace "png/.*","png" <# ...and then we remove the suffix that normally dictates the size of the thumbnail. #>
+			$finalUri = $stringResult -replace "/thumb","" -replace "png/.*","png" <# The results link us to thumbnail images scaled down to 120px. We can get the full-sized image URL by manipulating it. First we remove the thumbnail indicator, and then we remove the suffix that normally dictates the size of the thumbnail. #>
 
 			$finalName = $finalUri -replace ".*/" <# Grab the file's actual name by removing the rest of the web address. #>
 
@@ -99,8 +99,8 @@ function SearchForFilesBySpecies
 			The developer search function links us to the file namespace pages on Bulbagarden Archives, but not the
 			files directly. That means we'd have to make three web requests per file - one to the API, one to the
 			file page, and one to the raw file. By manipulating URLs on the frontend search page, we can save
-			ourselves one of those requests. Since a full search easily runs into the tens of thousands of files,
-			that translates to a huge amount of web traffic and thereby time saved. #>
+			ourselves the second of those three requests. Since a full search easily runs into the tens of thousands
+			of files, that translates to a huge amount of web traffic and thereby time saved. #>
 		}
 	}
 	
@@ -122,8 +122,7 @@ function SearchForFilesBySpecies
 			try {
 				$fileReq = Invoke-Webrequest $finalUri -OutFile .\$Species\$finalName
 			}
-			catch {	
-			}
+			catch {	}
 		}
 	}
 	
@@ -145,15 +144,6 @@ if ($requestedSpecies.Equals('all')) {
 		$beginScanning = $false
 
 		$specResume = Read-Host -Prompt 'Species to begin from' <# ...ask them where exactly their starting point will be. #>
-		$specResume = $specResume.ToLower()
-	}
-
-	$doReplaces = Read-Host -Prompt "Scan for regex replacement names? If you don't know what this means, you don't need it. (y/n)" <# This WAS something I inserted so that Miles (my beta tester) would be able to download specifically only the species in the replacement List at the start of the file. I could've removed it afterwards, but I felt like there might still be niche instances where it's useful. #>
-	if ($doReplaces -eq 'y') {
-		foreach ($replacement in $replacements) {
-
-			SearchForFilesBySpecies -Species $replacement.Name1 <# If, for some reason, the user does want to do just that, then do it: Conduct the search for all species in the List. #>
-		}
 	}
 
 	$indexReq = Invoke-WebRequest -URI $allURI <# Whether or not the regex names were downloaded, we now begin our search proper. Begin by downloading all Pokemon names from PokeAPI. The specific function we're calling will give us not just the names, but further search URLs that we can plug right back into PokeAPI to get the indexes. #>
@@ -172,7 +162,7 @@ if ($requestedSpecies.Equals('all')) {
 
 			$indexJson = $indexReq.Content | ConvertFrom-Json <# ...and as always, convert it to a table. #>
 
-			if ($indexJson.name -eq $specResume) { <# Check if the user specified a starting point earlier. #>
+			if ($indexJson.name -eq $specResume.ToLower()) { <# Check if the user specified a starting point earlier. #>
 
 				$beginScanning = $true <# If they did, and this species matches that starting point, then let the script know to start downloading. #>
 				
